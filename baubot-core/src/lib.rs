@@ -161,12 +161,15 @@ impl<
         let bot = Bot::from_env();
 
         // Create server
-        let request_server = Arc::new(broadcaster::Server::new(db.clone(), bot.clone()));
+        let request_server = Arc::new(broadcaster::Server::new());
 
         // Start server
-        let clone = request_server.clone();
+        let request_server_clone = request_server.clone();
+        let db_clone = db.clone();
+        let bot_clone = bot.clone();
         let request_server_handle = task::spawn(async move {
-            broadcaster::Server::listen(clone, server_socket).await;
+            broadcaster::Server::listen(request_server_clone, bot_clone, db_clone, server_socket)
+                .await;
         });
 
         // Create dependancy map
@@ -197,7 +200,7 @@ impl<
         let command = teloxide::filter_command::<Command, _>().endpoint(Self::command_handler);
 
         // Callback handler
-        let callback = broadcaster::Server::<DbRef, Db>::callback_update();
+        let callback = broadcaster::Server::callback_update();
 
         // Message handler
         let message = Update::filter_message()

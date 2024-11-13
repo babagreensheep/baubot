@@ -5,7 +5,6 @@ use crate::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
 use std::future::Future;
-use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 use teloxide::payloads::SendMessageSetters;
@@ -19,31 +18,28 @@ use tokio::sync::Mutex;
 
 pub mod types;
 
-pub(crate) struct Server<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> {
-    db: DbRef,
-    _db: PhantomData<Db>,
-    bot: Bot,
+pub(crate) struct Server {
     store: Mutex<types::BauResponseStore>,
 }
 
-impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> Server<DbRef, Db> {
+impl Server {
     /// Start the receiver
-    pub(crate) fn new(db: DbRef, bot: Bot) -> Self {
+    pub(crate) fn new() -> Self {
         // Create callback handlers
         let store = Default::default();
 
         // Create receiver
-        Self {
-            db,
-            _db: PhantomData,
-            bot,
-            store,
-        }
+        Self { store }
     }
 
     /// Listening loop
-    pub(crate) fn listen(
+    pub(crate) fn listen<
+        Db: BauData + Send + Sync + 'static,
+        DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
+    >(
         server: Arc<Self>,
+        bot: Bot,
+        db: DbRef,
         mut server_socket: types::ServerSocket,
     ) -> impl Future<Output = ()> + Send + 'static {
         async move {
@@ -52,7 +48,15 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
             loop {
                 match server_socket.recv().await {
                     // If we receive a payload
-                    Some(payload) => server.client_request_handler(server.clone(), payload).await,
+                    Some(payload) => {
+                        Self::client_request_handler(
+                            server.clone(),
+                            bot.clone(),
+                            db.clone(),
+                            payload,
+                        )
+                        .await
+                    }
 
                     // Sender has gone out of scope; break the loop
                     None => break,
@@ -64,11 +68,15 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
     }
 
     /// Handler
-    fn client_request_handler(
-        &self,
-        arc: Arc<Self>,
+    fn client_request_handler<
+        Db: BauData + Send + Sync + 'static,
+        DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
+    >(
+        server: Arc<Self>,
+        bot: Bot,
+        db: DbRef,
         bau_message: types::BauMessage,
-    ) -> impl std::future::Future<Output = ()> + Send + '_ {
+    ) -> impl std::future::Future<Output = ()> + Send + 'static {
         trace!("Payload received");
 
         async move {
@@ -93,12 +101,16 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
             // Run through each recipient
             for (recipient, client_response_sender) in recipients {
                 // Get chat_id
-                let chat_id = self.db.get_chat_id(&recipient).await;
+                let chat_id = db.get_chat_id(&recipient).await;
 
                 // Attempt to send the message
-                let send_attempt = self
-                    .message_sender(chat_id.clone(), message.clone(), responses.clone())
-                    .await;
+                let send_attempt = Self::message_sender(
+                    bot.clone(),
+                    chat_id.clone(),
+                    message.clone(),
+                    responses.clone(),
+                )
+                .await;
 
                 // These next steps apply only if a bau_response_sender was provided and a response
                 // is required
@@ -106,7 +118,7 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
                     (chat_id, client_response_sender, responses.is_empty())
                 {
                     tokio::task::spawn(Self::response_handler(
-                        arc.clone(),
+                        server.clone(),
                         chat_id,
                         send_attempt,
                         client_response_sender,
@@ -119,11 +131,12 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
 
     /// Sends the actual message
     fn message_sender(
-        &self,
+        bot: Bot,
         chat_id: Option<i64>,
         message: String,
         responses: Vec<Vec<InlineKeyboardButton>>,
-    ) -> impl std::future::Future<Output = std::result::Result<i32, types::Error>> + Send + '_ {
+    ) -> impl std::future::Future<Output = std::result::Result<i32, types::Error>> + Send + 'static
+    {
         async move {
             // Chck if chat ID exists
             match chat_id {
@@ -131,8 +144,7 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
                     trace!("Attempting to broadcast to {chat_id}: {message}");
 
                     // Send message to user
-                    let mut message_sender =
-                        self.bot.send_message(ChatId(chat_id), message.clone());
+                    let mut message_sender = bot.send_message(ChatId(chat_id), message.clone());
 
                     // Check if keyboard responses provided
                     if !responses.is_empty() {
@@ -161,9 +173,9 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
         chat_id | (message_id as i128)
     }
 
-    /// Handles the outcome of [Self::message_sender]
+    /// Pipe between [Server] and [crate::BauBot]
     fn response_handler(
-        arc: Arc<Self>,
+        server: Arc<Self>,
         chat_id: i64,
         send_attempt: std::result::Result<i32, types::Error>,
         client_response_sender: types::BauResponseSender,
@@ -186,7 +198,7 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
                     // Add message to map
                     {
                         // WARN: OBTAINING MUTEX
-                        let mut guard = arc.store.lock().await;
+                        let mut guard = server.store.lock().await;
                         guard.insert(key, bau_response_sender);
                         // WARN: DROPPING MUTEX
                     }
@@ -198,7 +210,7 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
                         tokio::time::sleep(std::time::Duration::from_millis(timeout)).await;
 
                         // WARN: OBTAINING MUTEX
-                        let mut guard = arc.store.lock().await;
+                        let mut guard = server.store.lock().await;
                         if let Some(_) = guard.remove(&key) {
                             trace!("Timeout ({timeout}ms) for {key}");
                         };
@@ -225,7 +237,7 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
     /// Handles [CallbackQuery]
     pub(crate) fn callback_handler(
         bot: Bot,
-        receiver: Arc<Self>,
+        server: Arc<Self>,
         (data, chat_id, message_id): (String, i64, i32),
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send
     {
@@ -239,30 +251,39 @@ impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> S
             // Obtain sender
             let bau_response_sender = {
                 // WARN: OBTAINING MUTEX
-                let mut guard = receiver.store.lock().await;
+                let mut guard = server.store.lock().await;
                 guard.remove(&key)
                 // WARN: DROPPING MUTEX
             };
 
-            // Check if sender valid
-            let _ = match bau_response_sender {
+            // Check if bau_response_sender valid and prepare an appropriate response for user
+            let message = match bau_response_sender {
+                // Valid bau_response_sender
                 Some(sender) => {
+                    // Send the response
                     let _ = sender.send(Ok(data.clone()));
-                    bot.send_message(ChatId(chat_id), format!("  <code>{data}</code>"))
+
+                    // Return text
+                    format!("  <code>{data}</code> [<code>@{message_id}</code>]")
                 }
-                None => bot.send_message(
-                    ChatId(chat_id),
-                    format!("  (this was likely due to a timeout 😭)"),
-                ),
-            }
-            .parse_mode(teloxide::types::ParseMode::Html)
-            .await?;
+
+                // Invalid bau_response_sender, most likely removed due to a timeout.
+                None => {
+                    format!("  [<code>@{message_id}</code>] (this was likely due to a timeout 😭)")
+                }
+            };
 
             // Remove response options
             let mut message_edit =
                 bot.edit_message_reply_markup(ChatId(chat_id), MessageId(message_id));
             message_edit.reply_markup = None;
             let _ = message_edit.await?;
+
+            // Send response to user
+            let _ = bot
+                .send_message(ChatId(chat_id), message)
+                .parse_mode(teloxide::types::ParseMode::Html)
+                .await?;
 
             Ok(())
         }
