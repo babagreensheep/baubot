@@ -4,6 +4,7 @@
 //! - OTP login approval
 
 pub(crate) use prelude::*;
+use std::marker::PhantomData;
 use std::ops::Deref;
 use std::sync::Arc;
 use teloxide::dispatching::dialogue::GetChatId;
@@ -19,7 +20,7 @@ pub mod broadcaster;
 #[tokio::test]
 async fn integration_test() {
     // Create baubot
-    let bau_bot = BauBot::new(TestDB::seed());
+    let bau_bot = BauBot::new(Arc::new(TestDB::seed()));
     let test_user = std::env::var("TEST_USER").unwrap();
 
     // Send non-responding message without response sender
@@ -94,14 +95,22 @@ async fn integration_test() {
 ///
 /// Under the hood, calling [BauBot::new] orchestrates and wraps a number of tasks. See
 /// [BauBot::new] for more information.
-pub struct BauBot {
+pub struct BauBot<
+    Db: BauData + Send + Sync + 'static,
+    DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
+> {
+    db: PhantomData<DbRef>,
     bot_server_handle: task::JoinHandle<()>,
     request_server_handle: task::JoinHandle<()>,
     client_socket: broadcaster::types::ClientSocket,
 }
 
 /// Passthrough [BauBot::client_socket] methods
-impl Deref for BauBot {
+impl<
+        Db: BauData + Send + Sync + 'static,
+        DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
+    > Deref for BauBot<Db, DbRef>
+{
     type Target = broadcaster::types::ClientSocket;
 
     fn deref(&self) -> &Self::Target {
@@ -110,23 +119,38 @@ impl Deref for BauBot {
 }
 
 /// Passthrough [BauBot::client_socket] methods
-impl AsRef<broadcaster::types::ClientSocket> for BauBot {
+impl<
+        Db: BauData + Send + Sync + 'static,
+        DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
+    > AsRef<broadcaster::types::ClientSocket> for BauBot<Db, DbRef>
+{
     fn as_ref(&self) -> &broadcaster::types::ClientSocket {
         &self.client_socket
     }
 }
 
 /// Ensures that all threads are stopped on drop
-impl Drop for BauBot {
+impl<
+        Db: BauData + Send + Sync + 'static,
+        DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
+    > Drop for BauBot<Db, DbRef>
+{
     fn drop(&mut self) {
         self.bot_server_handle.abort();
         self.request_server_handle.abort();
     }
 }
 
-impl BauBot {
-    /// Creates a new [BauBot]
-    pub fn new<Db: BauData + Send + Sync + 'static>(db: Db) -> Self {
+impl<
+        Db: BauData + Send + Sync + 'static,
+        DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
+    > BauBot<Db, DbRef>
+{
+    /// Creates a new [BauBot]. This runs a number of concurrent tasks
+    /// - (test mode) Initialise environment variables and logger
+    /// - Initialises a request [broadcaster::Server] to listen for requests
+    /// - Initialises a [Bot] to interact with telegram
+    pub fn new(db: DbRef) -> Self {
         #[cfg(test)]
         prelude::init();
 
@@ -134,10 +158,7 @@ impl BauBot {
         let (client_socket, server_socket) = tokio::sync::mpsc::unbounded_channel();
 
         // Create bot
-        let bot = Arc::new(Bot::from_env());
-
-        // Wrap db
-        let db = Arc::new(db);
+        let bot = Bot::from_env();
 
         // Create server
         let request_server = Arc::new(broadcaster::Server::new(db.clone(), bot.clone()));
@@ -155,7 +176,7 @@ impl BauBot {
 
         // Wrap bot server handle
         let bot_server_handle = task::spawn(async move {
-            Dispatcher::builder(bot, handler_builder::<Db>())
+            Dispatcher::builder(bot, Self::handler_builder())
                 .dependencies(dependencies)
                 .build()
                 .dispatch()
@@ -163,121 +184,114 @@ impl BauBot {
         });
 
         Self {
+            db: PhantomData,
             bot_server_handle,
             request_server_handle,
             client_socket,
         }
     }
-}
 
-/// Build the handler schema
-fn handler_builder<Db: BauData + Send + Sync + 'static>(
-) -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {
-    // Command handler
-    let command = teloxide::filter_command::<Command, _>().endpoint(command_handler::<Db>);
+    /// Build the handler schema
+    fn handler_builder() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {
+        // Command handler
+        let command = teloxide::filter_command::<Command, _>().endpoint(Self::command_handler);
 
-    // Callback handler
-    let callback = broadcaster::Server::<Arc<Bot>, Arc<Db>, Db>::callback_update();
+        // Callback handler
+        let callback = broadcaster::Server::<DbRef, Db>::callback_update();
 
-    // Message handler
-    let message = Update::filter_message()
-        // Inject user
-        .filter_map(|update: Update| update.from().cloned())
-        // Inject chatId
-        .filter_map(|message: Message| message.chat_id())
-        .branch(command)
-        .endpoint(catch_all);
+        // Message handler
+        let message = Update::filter_message()
+            // Inject user
+            .filter_map(|update: Update| update.from().cloned())
+            // Inject chatId
+            .filter_map(|message: Message| message.chat_id())
+            .branch(command)
+            .endpoint(Self::catch_all);
 
-    // Overall handler?
-    let master = dptree::entry().branch(callback).branch(message);
+        // Overall handler?
+        let master = dptree::entry().branch(callback).branch(message);
 
-    master
-}
+        master
+    }
 
-/// Parse [Command] received by the Bot
-async fn command_handler<Db: BauData + Send + Sync + 'static>(
-    bot: Arc<Bot>,
-    chat_id: ChatId,
-    user: User,
-    command: Command,
-    db: Arc<Db>,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let User { first_name, .. } = &user;
+    /// Parse [Command] received by the Bot
+    async fn command_handler(
+        bot: Bot,
+        chat_id: ChatId,
+        user: User,
+        command: Command,
+        db: DbRef,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let User { first_name, .. } = &user;
 
-    // Send greeting
-    bot.send_message(chat_id, format!("Hello {first_name}"))
+        // Send greeting
+        bot.send_message(chat_id, format!("Hello {first_name}"))
+            .parse_mode(teloxide::types::ParseMode::Html)
+            .await?;
+
+        // Run command
+        let outcome = match command {
+            Command::Start => Self::register_user(db, chat_id, user).await,
+            Command::Unregister => Self::delete_user(db, user).await,
+            Command::Help => Ok(Command::descriptions().to_string()),
+        }
+        .unwrap_or_else(|err| format!("ERROR: {err}"));
+
+        // Send result
+        bot.send_message(chat_id, outcome)
+            .parse_mode(teloxide::types::ParseMode::Html)
+            .await?;
+
+        Ok(())
+    }
+
+    /// Handler to register a user in the DB
+    async fn register_user(db: DbRef, chat_id: ChatId, user: User) -> Result<String, String> {
+        // Attempt to get username, reject if fail
+        let username = user.username.ok_or(format!("No username supplied."))?;
+
+        // Attempt to insert
+        trace!("Attempting to register {username}");
+        match db.insert_chat_id(&username, chat_id.0).await {
+            Ok(id) => Ok(format!(
+                "  Registered!{}\n\n{}",
+                match id {
+                    Some(id) =>
+                        format!(" Your old registration of <code>{id}</code> has been updated."),
+                    None => "".to_string(),
+                },
+                "🤗 Welcome to baubot's notification system."
+            )),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    /// Handler to delete a user from the DB
+    async fn delete_user(db: DbRef, user: User) -> Result<String, String> {
+        // Attempt to get username, reject if fail
+        let username = user.username.ok_or(format!("No username supplied."))?;
+
+        // Attempt to insert
+        match db.delete_chat_id(&username).await {
+            Ok(id) => Ok(format!(
+                "  Your chat_id <code>{id}</code> has been deleted"
+            )),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    /// Catch-all
+    async fn catch_all(
+        bot: Bot,
+        message: Message,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        bot.send_message(
+            message.chat.id,
+            "  Baubot does not know how to respond to your input. <b>Baubot is a bad elf!</b>",
+        )
         .parse_mode(teloxide::types::ParseMode::Html)
         .await?;
 
-    // Run command
-    let outcome = match command {
-        Command::Start => register_user(db, chat_id, user).await,
-        Command::Unregister => delete_user(db, user).await,
-        Command::Help => Ok(Command::descriptions().to_string()),
+        Ok(())
     }
-    .unwrap_or_else(|err| format!("ERROR: {err}"));
-
-    // Send result
-    bot.send_message(chat_id, outcome)
-        .parse_mode(teloxide::types::ParseMode::Html)
-        .await?;
-
-    Ok(())
-}
-
-/// Handler to register a user in the DB
-async fn register_user<Db: BauData + Send + Sync + 'static>(
-    db: Arc<Db>,
-    chat_id: ChatId,
-    user: User,
-) -> Result<String, String> {
-    // Attempt to get username, reject if fail
-    let username = user.username.ok_or(format!("No username supplied."))?;
-
-    // Attempt to insert
-    trace!("Attempting to register {username}");
-    match db.insert_chat_id(&username, chat_id.0).await {
-        Ok(id) => Ok(format!(
-            "  Registered!{}\n\n{}",
-            match id {
-                Some(id) =>
-                    format!(" Your old registration of <code>{id}</code> has been updated."),
-                None => "".to_string(),
-            },
-            "🤗 Welcome to baubot's notification system."
-        )),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-/// Handler to delete a user from the DB
-async fn delete_user<Db: BauData + Send + Sync + 'static>(
-    db: Arc<Db>,
-    user: User,
-) -> Result<String, String> {
-    // Attempt to get username, reject if fail
-    let username = user.username.ok_or(format!("No username supplied."))?;
-
-    // Attempt to insert
-    match db.delete_chat_id(&username).await {
-        Ok(id) => Ok(format!(
-            "  Your chat_id <code>{id}</code> has been deleted"
-        )),
-        Err(err) => Err(err.to_string()),
-    }
-}
-
-/// Catch-all
-async fn catch_all(
-    bot: Arc<Bot>,
-    message: Message,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    bot.send_message(
-        message.chat.id,
-        "  Baubot does not know how to respond to your input. <b>Baubot is a bad elf!</b>",
-    )
-    .parse_mode(teloxide::types::ParseMode::Html)
-    .await?;
-
-    Ok(())
 }

@@ -6,6 +6,7 @@ use serde::Deserialize;
 use serde::Serialize;
 use std::future::Future;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::sync::Arc;
 use teloxide::payloads::SendMessageSetters;
 use teloxide::types::InlineKeyboardButton;
@@ -18,25 +19,16 @@ use tokio::sync::Mutex;
 
 pub mod types;
 
-pub(crate) struct Server<
-    BotRef: AsRef<Bot> + Send + Sync + 'static,
-    DbRef: AsRef<Db> + Send + Sync + 'static,
-    Db: BauData,
-> {
+pub(crate) struct Server<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> {
     db: DbRef,
     _db: PhantomData<Db>,
-    bot: BotRef,
+    bot: Bot,
     store: Mutex<types::BauResponseStore>,
 }
 
-impl<
-        BotRef: AsRef<Bot> + Send + Sync + 'static,
-        DbRef: AsRef<Db> + Send + Sync + 'static,
-        Db: BauData + 'static,
-    > Server<BotRef, DbRef, Db>
-{
+impl<DbRef: Deref<Target = Db> + Send + Sync + 'static, Db: BauData + 'static> Server<DbRef, Db> {
     /// Start the receiver
-    pub(crate) fn new(db: DbRef, bot: BotRef) -> Self {
+    pub(crate) fn new(db: DbRef, bot: Bot) -> Self {
         // Create callback handlers
         let store = Default::default();
 
@@ -101,7 +93,7 @@ impl<
             // Run through each recipient
             for (recipient, client_response_sender) in recipients {
                 // Get chat_id
-                let chat_id = self.db.as_ref().get_chat_id(&recipient).await;
+                let chat_id = self.db.get_chat_id(&recipient).await;
 
                 // Attempt to send the message
                 let send_attempt = self
@@ -139,10 +131,8 @@ impl<
                     trace!("Attempting to broadcast to {chat_id}: {message}");
 
                     // Send message to user
-                    let mut message_sender = self
-                        .bot
-                        .as_ref()
-                        .send_message(ChatId(chat_id), message.clone());
+                    let mut message_sender =
+                        self.bot.send_message(ChatId(chat_id), message.clone());
 
                     // Check if keyboard responses provided
                     if !responses.is_empty() {
@@ -234,7 +224,7 @@ impl<
 
     /// Handles [CallbackQuery]
     pub(crate) fn callback_handler(
-        bot: Arc<Bot>,
+        bot: Bot,
         receiver: Arc<Self>,
         (data, chat_id, message_id): (String, i64, i32),
     ) -> impl std::future::Future<Output = Result<(), Box<dyn std::error::Error + Send + Sync>>> + Send
