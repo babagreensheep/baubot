@@ -1,7 +1,21 @@
-//! Core of [BauBot].
+//! # BauBot
+//! Inspired by the [baudot code](https://en.wikipedia.org/wiki/Baudot_code).
 //! [BauBot] is meant to simplify the plumbing around [teloxide](https://github.com/teloxide/teloxide) for use with server applications. Possible applications include:
 //! - E-mail server to receive e-mails and rebroadcast them on telegram
 //! - OTP login approval
+//!
+//! # Goals and non-goals
+//! ## Goals
+//! - (Asynchronously) receive push messages from a **client** application.
+//! - (Asynchronously) receive responses from a **user** and send it back to the **client**
+//! application.
+//! - (Asynchronously) register users through a database interface.
+//!
+//! ## Non-goals
+//! - Database implementation: users have to implement their own database and their own interface
+//! in the form of [BauData].
+//! - Standalone application interface (e.g. TCP server listening for updates): other parts of this
+//! project may address taht.
 
 pub(crate) use prelude::*;
 use std::marker::PhantomData;
