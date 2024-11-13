@@ -4,6 +4,43 @@
 pub(crate) use log::{error, info, log, trace, warn};
 use teloxide::macros::*;
 pub(crate) use teloxide::prelude::*;
+use teloxide::types::MessageId;
+use teloxide::types::ReplyParameters;
+
+#[macro_export]
+/// Message formatter
+macro_rules! fmt {
+    (pass $string:literal ) => {
+        concat!("🥳", " ", $string)
+    };
+    (fail $string:literal ) => {
+        concat!("😞", " ", $string)
+    };
+    (timeout $string:literal ) => {
+        concat!("⌚", " ", $string)
+    };
+}
+
+#[test]
+fn macro_test() {
+    let string = fmt!(pass "hello");
+    println!("{string}");
+    assert_eq!("✅ hello", string);
+}
+
+/// Instruct the bot to reply to a particular
+pub(crate) async fn reply_message(
+    bot: &Bot,
+    chat_id: i64,
+    message_id: i32,
+    text: String,
+) -> Result<Message, teloxide::RequestError> {
+    let message = bot
+        .send_message(ChatId(chat_id), text)
+        .reply_parameters(ReplyParameters::new(MessageId(message_id)))
+        .parse_mode(teloxide::types::ParseMode::Html);
+    message.await
+}
 
 /// Trait for database that [crate::BauBot] is able to interact with
 pub trait BauData

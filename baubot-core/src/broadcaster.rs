@@ -34,7 +34,7 @@ impl Server {
 
     /// Listening loop
     pub(crate) fn listen<
-        Db: BauData + Send + Sync + 'static,
+        Db: BauData + Send + Sync,
         DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
     >(
         server: Arc<Self>,
@@ -69,7 +69,7 @@ impl Server {
 
     /// Handler
     fn client_request_handler<
-        Db: BauData + Send + Sync + 'static,
+        Db: BauData + Send + Sync,
         DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
     >(
         server: Arc<Self>,
@@ -119,6 +119,7 @@ impl Server {
                 {
                     tokio::task::spawn(Self::response_handler(
                         server.clone(),
+                        bot.clone(),
                         chat_id,
                         send_attempt,
                         client_response_sender,
@@ -176,6 +177,7 @@ impl Server {
     /// Pipe between [Server] and [crate::BauBot]
     fn response_handler(
         server: Arc<Self>,
+        bot: Bot,
         chat_id: i64,
         send_attempt: std::result::Result<i32, types::Error>,
         client_response_sender: types::BauResponseSender,
@@ -209,10 +211,18 @@ impl Server {
                         // Run a timeout
                         tokio::time::sleep(std::time::Duration::from_millis(timeout)).await;
 
+                        // Remove response options
+                        let _ = Self::remove_markup(&bot, chat_id, message_id).await;
+
                         // WARN: OBTAINING MUTEX
                         let mut guard = server.store.lock().await;
                         if let Some(_) = guard.remove(&key) {
                             trace!("Timeout ({timeout}ms) for {key}");
+
+                            // Notify user of timeout
+                            let message =
+                                format!(crate::fmt!(timeout "Timeout ({}ms) exceeded"), timeout);
+                            let _ = reply_message(&bot, chat_id, message_id, message).await;
                         };
                         // WARN: DROPPING MUTEX
                         // WARN: DROPPING RECEIVER; transaction ends here.
@@ -264,26 +274,20 @@ impl Server {
                     let _ = sender.send(Ok(data.clone()));
 
                     // Return text
-                    format!("  <code>{data}</code> [<code>@{message_id}</code>]")
+                    format!(crate::fmt!(pass "<code>{}</code>"), data)
                 }
 
                 // Invalid bau_response_sender, most likely removed due to a timeout.
                 None => {
-                    format!("  [<code>@{message_id}</code>] (this was likely due to a timeout 😭)")
+                    format!(crate::fmt!(timeout "The recipient probably timed out 😭"))
                 }
             };
 
             // Remove response options
-            let mut message_edit =
-                bot.edit_message_reply_markup(ChatId(chat_id), MessageId(message_id));
-            message_edit.reply_markup = None;
-            let _ = message_edit.await?;
+            Self::remove_markup(&bot, chat_id, message_id).await?;
 
             // Send response to user
-            let _ = bot
-                .send_message(ChatId(chat_id), message)
-                .parse_mode(teloxide::types::ParseMode::Html)
-                .await?;
+            reply_message(&bot, chat_id, message_id, message).await?;
 
             Ok(())
         }
@@ -312,5 +316,17 @@ impl Server {
                 Some((data, chat_id, message_id))
             })
             .endpoint(Self::callback_handler)
+    }
+
+    /// Instruct the bot to remove markup
+    async fn remove_markup(
+        bot: &Bot,
+        chat_id: i64,
+        message_id: i32,
+    ) -> Result<Message, teloxide::RequestError> {
+        let mut message_edit =
+            bot.edit_message_reply_markup(ChatId(chat_id), MessageId(message_id));
+        message_edit.reply_markup = None;
+        message_edit.await
     }
 }
