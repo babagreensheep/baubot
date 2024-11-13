@@ -1,0 +1,11 @@
+[workspace.package]
+version = "0.1.0"
+authors = ["babagreensheep"]
+edition = "2021"
+description = "Wrapper around teloxide to receive and send simple messages."
+licence-file = "LICENCE"
+repository = "https://github.com/babagreensheep/baubot"
+
+[workspace]
+members = ["baubot-core"]
+resolver = "2"
