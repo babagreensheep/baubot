@@ -1,17 +1,17 @@
-//! Preludes for [crate::Baubot]
+//! Preludes for [crate::BauBot]
 
 // Use this within the carate only
 pub(crate) use log::{error, info, log, trace, warn};
 use teloxide::macros::*;
 pub(crate) use teloxide::prelude::*;
 
-/// Trait for database that [Baubot] is able to interact with
+/// Trait for database that [crate::BauBot] is able to interact with
 pub trait BauData
 where
     Self: Default + Sync + Send,
 {
     /// Get user's chat_id from the DB based on the suppled `username`.
-    /// Please remember that any [String] output gets parsed by [crate::baubot] as a Html entity.
+    /// Please remember that any [String] output gets parsed by [crate::BauBot] as a Html entity.
     ///
     /// # Safety
     /// The implementation of this trait should make all necessary authentication choices at the
@@ -22,7 +22,7 @@ where
     ) -> impl std::future::Future<Output = Option<i64>> + Send;
 
     /// Insert user's `username `into the DB together with their `chat_id`.
-    /// Please remember that any [String] output gets parsed by [crate::baubot] as a Html entity.
+    /// Please remember that any [String] output gets parsed by [crate::BauBot] as a Html entity.
     ///
     /// # Safety
     /// The implementation of this trait should make all necessary authentication choices at the
@@ -34,7 +34,7 @@ where
     ) -> impl std::future::Future<Output = Result<Option<i64>, String>> + Send;
 
     /// Delete user's `username `into the DB together with their `chat_id`.
-    /// Please remember that any [String] output gets parsed by [crate::baubot] as a Html entity.
+    /// Please remember that any [String] output gets parsed by [crate::BauBot] as a Html entity.
     ///
     /// # Safety
     /// The implementation of this trait should make all necessary authentication choices at the

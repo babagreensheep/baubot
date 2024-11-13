@@ -9,7 +9,7 @@ pub type ClientSocket = mpsc::UnboundedSender<BauMessage>;
 /// This is a server, i.e. someone that is capable of receivong on [mpsc::UnboundedReceiver::recv]
 pub type ServerSocket = mpsc::UnboundedReceiver<BauMessage>;
 
-/// Response from the [crate::baubot] if responses are required
+/// Response from the [crate::BauBot] if responses are required
 pub type BauResponse = Result<String, Error>;
 
 /// Sender for a [BauResponse]. This is a a pipeline used on two ends:
@@ -47,7 +47,7 @@ pub struct BauMessage {
     /// Message to be sent.
     ///
     /// # Safety
-    /// [crate::baubot] will attempt to send the message with a Html parser. Only certain types of
+    /// [crate::BauBot] will attempt to send the message with a Html parser. Only certain types of
     /// HTML entities are recognized so the user has to check.
     pub message: String,
 
@@ -73,7 +73,7 @@ pub enum Error {
     /// unable to send the message.
     Uncontactable,
 
-    ///  The pipeline for sending a response between [crate::baubot] and [Server] has expired. This
+    ///  The pipeline for sending a response between [crate::BauBot] and [Server] has expired. This
     ///  happens in the following circumstances:
     ///  - The timeout hook was triggered.
     ///  - The [Server::callback_handler] did not use the provided [BauResponseSender] for some

@@ -1,4 +1,5 @@
-//! Module for broadcasting messages
+//! Module containing that [Server] that listens for [types::BauMessage] and broadcasts it to the
+//! correct user.
 
 use crate::prelude::*;
 use serde::Deserialize;
@@ -10,6 +11,7 @@ use teloxide::payloads::SendMessageSetters;
 use teloxide::types::InlineKeyboardButton;
 use teloxide::types::InlineKeyboardMarkup;
 use teloxide::types::MaybeInaccessibleMessage;
+use teloxide::types::MessageId;
 use teloxide::types::UpdateKind;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -204,11 +206,12 @@ impl<
                     tokio::task::spawn(async move {
                         // Run a timeout
                         tokio::time::sleep(std::time::Duration::from_millis(timeout)).await;
-                        trace!("Timeout ({timeout}ms) for {key}");
 
                         // WARN: OBTAINING MUTEX
                         let mut guard = arc.store.lock().await;
-                        guard.remove(&key);
+                        if let Some(_) = guard.remove(&key) {
+                            trace!("Timeout ({timeout}ms) for {key}");
+                        };
                         // WARN: DROPPING MUTEX
                         // WARN: DROPPING RECEIVER; transaction ends here.
                     });
@@ -255,15 +258,21 @@ impl<
             let _ = match bau_response_sender {
                 Some(sender) => {
                     let _ = sender.send(Ok(data.clone()));
-                    bot.send_message(
-                        ChatId(chat_id),
-                        format!("Response <code>{data}</code> received."),
-                    )
+                    bot.send_message(ChatId(chat_id), format!("  <code>{data}</code>"))
                 }
-                None => {
-                    bot.send_message(ChatId(chat_id), format!("Unable to send <code>{data}</code>: no receiver found (this was likely due to a timeout.)"))
-                },
-            };
+                None => bot.send_message(
+                    ChatId(chat_id),
+                    format!("  (this was likely due to a timeout 😭)"),
+                ),
+            }
+            .parse_mode(teloxide::types::ParseMode::Html)
+            .await?;
+
+            // Remove response options
+            let mut message_edit =
+                bot.edit_message_reply_markup(ChatId(chat_id), MessageId(message_id));
+            message_edit.reply_markup = None;
+            let _ = message_edit.await?;
 
             Ok(())
         }

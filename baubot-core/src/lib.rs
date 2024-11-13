@@ -12,7 +12,7 @@ use teloxide::types::User;
 use teloxide::utils::command::BotCommands;
 use tokio::task;
 
-pub mod prelude;
+pub(crate) mod prelude;
 
 pub mod broadcaster;
 
@@ -57,6 +57,31 @@ async fn integration_test() {
     });
     let response = bau_response_receiver.await;
     info!("response from baubot: {response:#?}");
+
+    // Send two response-required messsages
+    info!("Two response-required message");
+    let (bau_response_sender, bau_response_receiver00) = tokio::sync::oneshot::channel();
+    let _ = bau_bot.send(broadcaster::types::BauMessage {
+        sender: test_user.clone(),
+        recipients: vec![(test_user.clone(), Some((bau_response_sender, 5000)))],
+        message: "Response required!".to_string(),
+        responses: vec![
+            vec!["approve".into(), "deny".into()],
+            vec!["fuck off".into()],
+        ],
+    });
+    let (bau_response_sender, bau_response_receiver01) = tokio::sync::oneshot::channel();
+    let _ = bau_bot.send(broadcaster::types::BauMessage {
+        sender: test_user.clone(),
+        recipients: vec![(test_user.clone(), Some((bau_response_sender, 5000)))],
+        message: "Response required!".to_string(),
+        responses: vec![
+            vec!["approve".into(), "deny".into()],
+            vec!["fuck off".into()],
+        ],
+    });
+    let responses = tokio::join!(bau_response_receiver00, bau_response_receiver01);
+    println!("{responses:#?}");
 
     info!("waiting for app exit");
     let _ = tokio::signal::ctrl_c().await;
@@ -213,13 +238,13 @@ async fn register_user<Db: BauData + Send + Sync + 'static>(
     trace!("Attempting to register {username}");
     match db.insert_chat_id(&username, chat_id.0).await {
         Ok(id) => Ok(format!(
-            "You have been registered!{}\n\n{}",
+            "  Registered!{}\n\n{}",
             match id {
                 Some(id) =>
                     format!(" Your old registration of <code>{id}</code> has been updated."),
                 None => "".to_string(),
             },
-            "Welcome to baubot's notification system."
+            "🤗 Welcome to baubot's notification system."
         )),
         Err(err) => Err(err.to_string()),
     }
@@ -235,7 +260,9 @@ async fn delete_user<Db: BauData + Send + Sync + 'static>(
 
     // Attempt to insert
     match db.delete_chat_id(&username).await {
-        Ok(id) => Ok(format!("Your chat_id <code>{id}</code> has been deleted")),
+        Ok(id) => Ok(format!(
+            "  Your chat_id <code>{id}</code> has been deleted"
+        )),
         Err(err) => Err(err.to_string()),
     }
 }
@@ -247,7 +274,7 @@ async fn catch_all(
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     bot.send_message(
         message.chat.id,
-        "Baubot does not know how to respond to your input. <b>Baubot is a bad elf!</b>",
+        "  Baubot does not know how to respond to your input. <b>Baubot is a bad elf!</b>",
     )
     .parse_mode(teloxide::types::ParseMode::Html)
     .await?;
