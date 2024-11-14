@@ -10,30 +10,6 @@ pub(crate) use tokio::task;
 
 pub mod types;
 
-#[cfg(test)]
-/// Helper to initialise functions
-pub(crate) fn init() {
-    // Run baubot's init
-    baubot_core::prelude::init();
-
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let secrets_path = manifest_path.join("server.env");
-
-        // Initialize env secrets
-        dotenvy::from_path(secrets_path).unwrap();
-
-        // // initialise logger
-        // env_logger::Builder::new()
-        //     .filter_level(log::LevelFilter::Trace)
-        //     .filter_module("teloxide", log::LevelFilter::Off)
-        //     .filter_module("reqwest", log::LevelFilter::Off)
-        //     .parse_env("LOG_LEVEL")
-        //     .init();
-    });
-}
-
 /// Helper to read from a [net::TcpStream]
 pub(crate) async fn read_stream(tcp_stream: &net::TcpStream) -> std::io::Result<String> {
     // Create buffer

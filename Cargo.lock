@@ -120,7 +120,8 @@ checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
 name = "baubot-core"
 version = "0.1.0"
 dependencies = [
- "dotenvy",
+ "baubot-data",
+ "baubot-utils",
  "env_logger",
  "log",
  "serde",
@@ -130,15 +131,35 @@ dependencies = [
 ]
 
 [[package]]
+name = "baubot-data"
+version = "0.1.0"
+dependencies = [
+ "baubot-core",
+ "baubot-utils",
+ "tokio",
+]
+
+[[package]]
 name = "baubot-server"
 version = "0.1.0"
 dependencies = [
  "baubot-core",
- "dotenvy",
+ "baubot-data",
+ "baubot-utils",
  "env_logger",
  "log",
  "serde",
  "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "baubot-utils"
+version = "0.1.0"
+dependencies = [
+ "dotenvy",
+ "env_logger",
+ "log",
  "tokio",
 ]
 

@@ -84,15 +84,15 @@ impl<
     /// - Initialises a request server to listen for requests sent through a
     /// [broadcaster::types::ClientSocket]
     /// - Initialises a [Bot] to interact with telegram
-    pub fn new(db: DbRef) -> Self {
+    pub fn new<S: Into<String>>(db: DbRef, token: S) -> Self {
         #[cfg(test)]
-        prelude::init();
+        baubot_utils::init();
 
         // Create sockets
         let (client_socket, server_socket) = tokio::sync::mpsc::unbounded_channel();
 
-        // Create bot
-        let bot = Bot::from_env();
+        // Create bot: If in test mode use utils
+        let bot = Bot::new(token);
 
         // Create server
         let request_server = Arc::new(broadcaster::Server::new());
@@ -233,6 +233,3 @@ impl<
         Ok(())
     }
 }
-
-#[cfg(test)]
-mod tests;

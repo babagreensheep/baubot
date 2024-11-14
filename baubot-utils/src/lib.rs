@@ -1,6 +1,8 @@
 //! Bindings to environment secrets for use across the workspace. Because accessing env secrets
 //! sucks donkey balls.
 
+pub use log::{debug, error, info, trace, warn};
+
 include!(concat!(env!("OUT_DIR"), "/secrets.rs"));
 
 /// Call this function to initialize loggers etc.. Env secrets are consts.
@@ -17,10 +19,4 @@ pub fn init() {
 
         log::info!("Init complete.");
     });
-}
-
-#[test]
-fn test() {
-    init();
-    log::info!("{TELOXIDE_TOKEN}");
 }

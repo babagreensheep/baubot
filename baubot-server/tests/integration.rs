@@ -1,21 +1,21 @@
-use std::str::FromStr;
+use baubot_core::prelude::types::*;
+use baubot_data::test_db::TestDB;
+use baubot_server::*;
+use baubot_utils::*;
+use std::sync::Arc;
 
-use crate::*;
+use std::str::FromStr;
 
 #[tokio::test]
 async fn simple_message() {
-    prelude::init();
+    baubot_utils::init();
 
-    let test_user = std::env::var("TEST_USER").unwrap();
-
-    let host = std::env::var("BAUBOT_LISTEN_HOST").unwrap_or("0.0.0.0".to_string());
-    let port = std::env::var("BAUBOT_LISTEN_PORT").unwrap_or("5000".to_string());
+    let test_user = baubot_utils::TEST_USER;
+    let host = baubot_utils::BAUBOT_LISTEN_HOST;
+    let port = baubot_utils::BAUBOT_LISTEN_PORT;
     let socket_addr = ::core::net::SocketAddr::from_str(&format!("{host}:{port}")).unwrap();
-
-    let db = Arc::new(baubot_core::prelude::TestDB::seed());
-
-    let server = BauServer::new(db, socket_addr);
-
+    let db = Arc::new(TestDB::seed());
+    let server = BauServer::new(db, socket_addr, TELOXIDE_TOKEN);
     let client = BauClient::<3>::new(socket_addr);
 
     let response_handler = client
@@ -39,18 +39,14 @@ async fn simple_message() {
 
 #[tokio::test]
 async fn response_required() {
-    prelude::init();
+    baubot_utils::init();
 
-    let test_user = std::env::var("TEST_USER").unwrap();
-
-    let host = std::env::var("BAUBOT_LISTEN_HOST").unwrap_or("0.0.0.0".to_string());
-    let port = std::env::var("BAUBOT_LISTEN_PORT").unwrap_or("5000".to_string());
+    let test_user = baubot_utils::TEST_USER;
+    let host = baubot_utils::BAUBOT_LISTEN_HOST;
+    let port = baubot_utils::BAUBOT_LISTEN_PORT;
     let socket_addr = ::core::net::SocketAddr::from_str(&format!("{host}:{port}")).unwrap();
-
-    let db = Arc::new(baubot_core::prelude::TestDB::seed());
-
-    let server = BauServer::new(db, socket_addr);
-
+    let db = Arc::new(TestDB::seed());
+    let server = BauServer::new(db, socket_addr, TELOXIDE_TOKEN);
     let client = BauClient::<3>::new(socket_addr);
 
     let mut response_handler = client
@@ -80,24 +76,20 @@ async fn response_required() {
 
 #[tokio::test]
 async fn object_payload() {
-    prelude::init();
+    baubot_utils::init();
 
-    let test_user = std::env::var("TEST_USER").unwrap();
-
-    let host = std::env::var("BAUBOT_LISTEN_HOST").unwrap_or("0.0.0.0".to_string());
-    let port = std::env::var("BAUBOT_LISTEN_PORT").unwrap_or("5000".to_string());
+    let test_user = baubot_utils::TEST_USER;
+    let host = baubot_utils::BAUBOT_LISTEN_HOST;
+    let port = baubot_utils::BAUBOT_LISTEN_PORT;
     let socket_addr = ::core::net::SocketAddr::from_str(&format!("{host}:{port}")).unwrap();
-
-    let db = Arc::new(baubot_core::prelude::TestDB::seed());
-
-    let server = BauServer::new(db, socket_addr);
-
+    let db = Arc::new(TestDB::seed());
+    let server = BauServer::new(db, socket_addr, TELOXIDE_TOKEN);
     let client = BauClient::<3>::new(socket_addr);
 
     let mut response_handler = client
         .send(BauMessage {
-            sender: test_user.clone(),
-            recipients: vec![(test_user, None)],
+            sender: test_user.to_string(),
+            recipients: vec![(test_user.to_string(), None)],
             message: "Approve?".to_string(),
             responses: RequestedResponses {
                 timeout: 10000,

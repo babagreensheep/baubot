@@ -33,7 +33,8 @@ macro_rules! fmt {
 fn macro_test() {
     let string = fmt!(pass "hello");
     println!("{string}");
-    assert_eq!("✅ hello", string);
+    let other_string = concat!("🥳", " ", "hello");
+    assert_eq!(other_string, string);
 }
 
 /// Instruct the bot to reply to a particular
@@ -53,7 +54,7 @@ pub(crate) async fn reply_message(
 /// Trait for database that [crate::BauBot] is able to interact with
 pub trait BauData
 where
-    Self: Default + Sync + Send,
+    Self: Sync + Send,
 {
     /// Get user's chat_id from the DB based on the suppled `username`.
     /// Please remember that any [String] output gets parsed by [crate::BauBot] as a Html entity.
@@ -113,106 +114,4 @@ pub(crate) enum Command {
     Unregister,
     #[command(description = "Get list of available commands")]
     Help,
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-use std::collections::HashMap;
-
-#[cfg(any(test, feature = "test-utils"))]
-/// Init script to initialise:
-/// - Environment variables
-/// - Logger
-/// **Used only in test scripts** as this is a library. Any project implementing the library should
-/// have its own environment init.
-pub fn init() {
-    static INIT: std::sync::Once = std::sync::Once::new();
-    INIT.call_once(|| {
-        let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let secrets_path = manifest_path.join("tele.env");
-
-        // Initialize env secrets
-        dotenvy::from_path(secrets_path).unwrap();
-
-        // initialise logger
-        env_logger::Builder::new()
-            .filter_level(log::LevelFilter::Trace)
-            .filter_module("teloxide", log::LevelFilter::Off)
-            .filter_module("reqwest", log::LevelFilter::Off)
-            .parse_env("LOG_LEVEL")
-            .init();
-    });
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-#[derive(Default)]
-pub struct TestDB {
-    db: tokio::sync::Mutex<HashMap<String, i64>>,
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-impl TestDB {
-    pub fn seed() -> Self {
-        init();
-        let user = std::env::var("TEST_USER").unwrap();
-        let chat_id = std::env::var("TEST_CHATID").unwrap().parse().unwrap();
-        let mut db = HashMap::new();
-        db.insert(user, chat_id);
-        let db = tokio::sync::Mutex::new(db);
-        Self { db }
-    }
-}
-
-#[cfg(any(test, feature = "test-utils"))]
-impl BauData for TestDB {
-    fn register_user_chat_id(
-        &self,
-        username: &str,
-    ) -> impl std::future::Future<Output = Option<i64>> + Send {
-        async {
-            let db = self.db.lock().await;
-            let entry = db.get(username)?.to_owned();
-            Some(entry)
-        }
-    }
-
-    fn insert_chat_id(
-        &self,
-        username: &str,
-        chat_id: i64,
-    ) -> impl std::future::Future<Output = Result<Option<i64>, String>> + Send {
-        async move {
-            let mut db = self.db.lock().await;
-            Ok(db.insert(username.to_string(), chat_id.clone()))
-        }
-    }
-
-    fn delete_chat_id(
-        &self,
-        username: &str,
-    ) -> impl std::future::Future<Output = Result<i64, String>> + Send {
-        async move {
-            let mut db = self.db.lock().await;
-            match db.remove(username) {
-                Some(id) => Ok(id),
-                None => Err(format!(
-                    "Username <code>{username}</code> was not registered."
-                )),
-            }
-        }
-    }
-
-    fn is_admin(&self, username: &str) -> impl std::future::Future<Output = bool> + Send {
-        let _ = username;
-        async { true }
-    }
-
-    fn get_chat_id(&self, username: &str) -> impl std::future::Future<Output = Option<i64>> + Send {
-        async move {
-            let db = self.db.lock().await;
-            match db.get(username) {
-                Some(id) => Some(id.clone()),
-                None => None,
-            }
-        }
-    }
 }

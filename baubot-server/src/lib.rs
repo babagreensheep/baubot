@@ -57,9 +57,9 @@ where
 {
     /// Creates a new [BauServer] object that adheres to the transaction protocol specified in the
     /// [crate] documentation.
-    pub fn new(db: DbRef, addr: ::core::net::SocketAddr) -> Self {
+    pub fn new<S: Into<String>>(db: DbRef, addr: ::core::net::SocketAddr, token: S) -> Self {
         // Create baubot
-        let baubot = Arc::new(BauBot::new(db));
+        let baubot = Arc::new(BauBot::new(db, token));
 
         // Create listening thread
         let listener = task::spawn(Self::listen(baubot, addr));
@@ -309,6 +309,3 @@ impl<const RETRIES: usize> BauClient<RETRIES> {
         trace!("Finished receiving responses from BauServer.");
     }
 }
-
-#[cfg(test)]
-mod tests;
