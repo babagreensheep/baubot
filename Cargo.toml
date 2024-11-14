@@ -5,6 +5,7 @@ edition = "2021"
 description = "Wrapper around teloxide to receive and send simple messages."
 licence-file = "LICENCE"
 repository = "https://github.com/babagreensheep/baubot"
+readme = "README.md"
 
 [workspace]
 members = ["baubot-core", "baubot-server"]

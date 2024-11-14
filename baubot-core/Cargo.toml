@@ -6,6 +6,7 @@ edition.workspace = true
 description.workspace = true
 licence-file.workspace = true
 repository.workspace = true
+readme.workspace = true
 
 [features]
 test-utils = ["dep:dotenvy", "dep:env_logger"]
