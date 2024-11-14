@@ -237,9 +237,12 @@ impl<const RETRIES: usize> BauClient<RETRIES> {
         }
     }
 
-    /// Sends a payload through the [BauClient] to the [BauServer] and returns a
+    /// Sends a [String] payload through the [BauClient] to the [BauServer] and returns a
     /// [BauServerResponseReceiver] that we can poll for responses.
-    pub async fn send(&self, request: String) -> Result<BauServerResponseReceiver, SendError> {
+    pub async fn send_string(
+        &self,
+        request: String,
+    ) -> Result<BauServerResponseReceiver, SendError> {
         // Create stream
         let tcp_stream = self.connect().await?;
 
@@ -256,6 +259,22 @@ impl<const RETRIES: usize> BauClient<RETRIES> {
         task::spawn(Self::receive_responses(tcp_stream, bau_response_sender));
 
         Ok(bau_response_receiver)
+    }
+
+    /// Sends a [BauMessage] through the [BauClient] to the [BauServer] and returns a
+    /// [BauServerResponseReceiver] that we can poll for responses.
+    ///
+    /// **Note**: Caller should **not** provide any handlers. They will be ignored.
+    pub async fn send(
+        &self,
+        bau_message: BauMessage,
+    ) -> Result<BauServerResponseReceiver, SendError> {
+        // Sanity test the input
+        let bau_message = serde_json::to_string(&bau_message).map_err(|err| {
+            SendError::InvalidData(SerializeError::InvalidJson(format! {"{err:?}"}))
+        })?;
+
+        self.send_string(bau_message).await
     }
 
     /// Loop to receive responses from the [BauServer] and send responses to the

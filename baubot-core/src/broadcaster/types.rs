@@ -30,7 +30,7 @@ pub type BauResponseReceiver = oneshot::Receiver<BauResponse>;
 /// message_id`)
 pub type BauResponseStore = HashMap<i128, BauResponseSender>;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
 /// Form of message that can be passed between various interfaces (e.g. [ServerSocket],
 /// [crate::BauBot] and [ClientSocket]).
 pub struct BauMessage {
@@ -44,6 +44,7 @@ pub struct BauMessage {
     ///
     /// Clients should use the [crate::BauData] trait / database to obtain the appropriate telegram
     /// username.
+    #[serde(serialize_with = "serialize_recipients")]
     pub recipients: Vec<(String, Option<BauResponseSender>)>,
 
     /// Message to be sent.
@@ -64,6 +65,17 @@ pub struct BauMessage {
     ///
     /// ```
     pub responses: RequestedResponses,
+}
+
+/// Serialize recipients on [BauMessage]
+fn serialize_recipients<S>(
+    recipients: &Vec<(String, Option<BauResponseSender>)>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    serializer.collect_seq(recipients.iter().map(|(recipient, _)| recipient))
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
