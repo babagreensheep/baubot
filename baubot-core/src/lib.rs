@@ -18,16 +18,10 @@
 //! project may address taht.
 
 pub(crate) use prelude::*;
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::sync::Arc;
-use teloxide::dispatching::dialogue::GetChatId;
-use teloxide::dispatching::{UpdateFilterExt, UpdateHandler};
-use teloxide::types::{MessageId, User};
-use teloxide::utils::command::BotCommands;
-use tokio::task;
 
-pub(crate) mod prelude;
+use std::marker::PhantomData;
+
+pub mod prelude;
 
 pub mod broadcaster;
 
@@ -39,7 +33,7 @@ pub mod broadcaster;
 /// Under the hood, calling [BauBot::new] orchestrates and wraps a number of tasks. See
 /// [BauBot::new] for more information.
 pub struct BauBot<
-    Db: BauData + Send + Sync,
+    Db: BauData + Send + Sync + 'static,
     DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
 > {
     db: PhantomData<DbRef>,
@@ -48,7 +42,6 @@ pub struct BauBot<
     client_socket: broadcaster::types::ClientSocket,
 }
 
-/// Passthrough [BauBot::client_socket] methods
 impl<
         Db: BauData + Send + Sync + 'static,
         DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
@@ -61,7 +54,6 @@ impl<
     }
 }
 
-/// Passthrough [BauBot::client_socket] methods
 impl<
         Db: BauData + Send + Sync + 'static,
         DbRef: Deref<Target = Db> + Clone + Send + Sync + 'static,
@@ -89,7 +81,8 @@ impl<
 {
     /// Creates a new [BauBot]. This runs a number of concurrent tasks
     /// - (test mode) Initialise environment variables and logger
-    /// - Initialises a request [broadcaster::Server] to listen for requests
+    /// - Initialises a request server to listen for requests sent through a
+    /// [broadcaster::types::ClientSocket]
     /// - Initialises a [Bot] to interact with telegram
     pub fn new(db: DbRef) -> Self {
         #[cfg(test)]
@@ -137,6 +130,9 @@ impl<
 
     /// Build the handler schema
     fn handler_builder() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync + 'static>> {
+        /// Only used here.
+        use teloxide::dispatching::dialogue::GetChatId;
+
         // Command handler
         let command = teloxide::filter_command::<Command, _>().endpoint(Self::command_handler);
 

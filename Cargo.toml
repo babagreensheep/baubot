@@ -7,5 +7,5 @@ licence-file = "LICENCE"
 repository = "https://github.com/babagreensheep/baubot"
 
 [workspace]
-members = ["baubot-core"]
+members = ["baubot-core", "baubot-server"]
 resolver = "2"

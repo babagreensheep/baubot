@@ -123,10 +123,22 @@ dependencies = [
  "dotenvy",
  "env_logger",
  "log",
- "native-tls",
  "serde",
  "serde_json",
  "teloxide",
+ "tokio",
+]
+
+[[package]]
+name = "baubot-server"
+version = "0.1.0"
+dependencies = [
+ "baubot-core",
+ "dotenvy",
+ "env_logger",
+ "log",
+ "serde",
+ "serde_json",
  "tokio",
 ]
 

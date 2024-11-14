@@ -1,7 +1,9 @@
 use crate::*;
 
+use self::broadcaster::types::RequestedResponses;
+
 #[tokio::test]
-async fn integration_test() {
+async fn start() {
     // Create baubot
     let bau_bot = BauBot::new(Arc::new(TestDB::seed()));
     let test_user = std::env::var("TEST_USER").unwrap();
@@ -12,7 +14,7 @@ async fn integration_test() {
         sender: test_user.clone(),
         recipients: vec![(test_user.clone(), None)],
         message: "Message!".to_string(),
-        responses: Vec::new(),
+        responses: RequestedResponses::default(),
     });
 
     // Send non-responding message with response sender
@@ -20,9 +22,9 @@ async fn integration_test() {
     let (bau_response_sender, bau_response_receiver) = tokio::sync::oneshot::channel();
     let _ = bau_bot.send(broadcaster::types::BauMessage {
         sender: test_user.clone(),
-        recipients: vec![(test_user.clone(), Some((bau_response_sender, 5000)))],
+        recipients: vec![(test_user.clone(), Some(bau_response_sender))],
         message: "Message (waiting on response)!".to_string(),
-        responses: Vec::new(),
+        responses: RequestedResponses::default(),
     });
     let response = bau_response_receiver.await;
     info!("response from baubot: {response:#?}");
@@ -32,12 +34,15 @@ async fn integration_test() {
     let (bau_response_sender, bau_response_receiver) = tokio::sync::oneshot::channel();
     let _ = bau_bot.send(broadcaster::types::BauMessage {
         sender: test_user.clone(),
-        recipients: vec![(test_user.clone(), Some((bau_response_sender, 5000)))],
+        recipients: vec![(test_user.clone(), Some(bau_response_sender))],
         message: "Response required!".to_string(),
-        responses: vec![
-            vec!["approve".into(), "deny".into()],
-            vec!["fuck off".into()],
-        ],
+        responses: RequestedResponses {
+            timeout: 10000,
+            keyboard: vec![
+                vec!["approve".into(), "deny".into()],
+                vec!["fuck off".into()],
+            ],
+        },
     });
     let response = bau_response_receiver.await;
     info!("response from baubot: {response:#?}");
@@ -47,22 +52,28 @@ async fn integration_test() {
     let (bau_response_sender, bau_response_receiver00) = tokio::sync::oneshot::channel();
     let _ = bau_bot.send(broadcaster::types::BauMessage {
         sender: test_user.clone(),
-        recipients: vec![(test_user.clone(), Some((bau_response_sender, 5000)))],
+        recipients: vec![(test_user.clone(), Some(bau_response_sender))],
         message: "Response required!".to_string(),
-        responses: vec![
-            vec!["approve".into(), "deny".into()],
-            vec!["fuck off".into()],
-        ],
+        responses: RequestedResponses {
+            timeout: 10000,
+            keyboard: vec![
+                vec!["approve".into(), "deny".into()],
+                vec!["fuck off".into()],
+            ],
+        },
     });
     let (bau_response_sender, bau_response_receiver01) = tokio::sync::oneshot::channel();
     let _ = bau_bot.send(broadcaster::types::BauMessage {
         sender: test_user.clone(),
-        recipients: vec![(test_user.clone(), Some((bau_response_sender, 5000)))],
+        recipients: vec![(test_user.clone(), Some(bau_response_sender))],
         message: "Response required!".to_string(),
-        responses: vec![
-            vec!["approve".into(), "deny".into()],
-            vec!["fuck off".into()],
-        ],
+        responses: RequestedResponses {
+            timeout: 10000,
+            keyboard: vec![
+                vec!["approve".into(), "deny".into()],
+                vec!["fuck off".into()],
+            ],
+        },
     });
     let responses = tokio::join!(bau_response_receiver00, bau_response_receiver01);
     println!("{responses:#?}");

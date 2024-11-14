@@ -1,11 +1,19 @@
 //! Preludes for [crate::BauBot]
 
 // Use this within the carate only
+pub use crate::broadcaster::types;
+#[allow(unused_imports)]
 pub(crate) use log::{error, info, log, trace, warn};
-use teloxide::macros::*;
+pub(crate) use std::ops::Deref;
+pub(crate) use std::sync::Arc;
+pub(crate) use teloxide::dispatching::UpdateFilterExt;
+pub(crate) use teloxide::dispatching::UpdateHandler;
 pub(crate) use teloxide::prelude::*;
-use teloxide::types::MessageId;
-use teloxide::types::ReplyParameters;
+pub(crate) use teloxide::types::MessageId;
+pub(crate) use teloxide::types::ReplyParameters;
+pub(crate) use teloxide::types::User;
+pub(crate) use teloxide::utils::command::BotCommands;
+pub(crate) use tokio::task;
 
 #[macro_export]
 /// Message formatter
@@ -107,16 +115,16 @@ pub(crate) enum Command {
     Help,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 use std::collections::HashMap;
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 /// Init script to initialise:
 /// - Environment variables
 /// - Logger
 /// **Used only in test scripts** as this is a library. Any project implementing the library should
 /// have its own environment init.
-pub(crate) fn init() {
+pub fn init() {
     static INIT: std::sync::Once = std::sync::Once::new();
     INIT.call_once(|| {
         let manifest_path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -135,15 +143,15 @@ pub(crate) fn init() {
     });
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 #[derive(Default)]
-pub(crate) struct TestDB {
+pub struct TestDB {
     db: tokio::sync::Mutex<HashMap<String, i64>>,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 impl TestDB {
-    pub(crate) fn seed() -> Self {
+    pub fn seed() -> Self {
         init();
         let user = std::env::var("TEST_USER").unwrap();
         let chat_id = std::env::var("TEST_CHATID").unwrap().parse().unwrap();
@@ -154,7 +162,7 @@ impl TestDB {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-utils"))]
 impl BauData for TestDB {
     fn register_user_chat_id(
         &self,

@@ -1,17 +1,18 @@
-//! Module containing that [Server] that listens for [types::BauMessage] and broadcasts it to the
-//! correct user.
+//! Module describing the server that polls [types::ServerSocket] for a [types::BauMessage] sent by
+//! a [types::ClientSocket] and sends it to the correct user.
+//!
+//! The same server will wait for a respones from [crate::BauBot] if a response is requested by
+//! [types::BauMessage] and send an appropriate response to the [types::BauResponseReceiver]
+//! supplied by the [types::BauMessage]
 
 use crate::prelude::*;
 use serde::Deserialize;
 use serde::Serialize;
 use std::future::Future;
-use std::ops::Deref;
-use std::sync::Arc;
 use teloxide::payloads::SendMessageSetters;
 use teloxide::types::InlineKeyboardButton;
 use teloxide::types::InlineKeyboardMarkup;
 use teloxide::types::MaybeInaccessibleMessage;
-use teloxide::types::MessageId;
 use teloxide::types::UpdateKind;
 use tokio::sync::oneshot;
 use tokio::sync::Mutex;
@@ -85,11 +86,11 @@ impl Server {
                 sender: _,
                 recipients,
                 message,
-                responses,
+                responses: types::RequestedResponses { timeout, keyboard },
             } = bau_message;
 
             // Convert responses into keyboard
-            let responses = responses
+            let keyboard = keyboard
                 .iter()
                 .map(|row| {
                     row.iter()
@@ -108,14 +109,14 @@ impl Server {
                     bot.clone(),
                     chat_id.clone(),
                     message.clone(),
-                    responses.clone(),
+                    keyboard.clone(),
                 )
                 .await;
 
                 // These next steps apply only if a bau_response_sender was provided and a response
                 // is required
-                if let (Some(chat_id), Some((client_response_sender, timeout)), false) =
-                    (chat_id, client_response_sender, responses.is_empty())
+                if let (Some(chat_id), Some(client_response_sender), false) =
+                    (chat_id, client_response_sender, keyboard.is_empty())
                 {
                     tokio::task::spawn(Self::response_handler(
                         server.clone(),
@@ -136,7 +137,7 @@ impl Server {
         chat_id: Option<i64>,
         message: String,
         responses: Vec<Vec<InlineKeyboardButton>>,
-    ) -> impl std::future::Future<Output = std::result::Result<i32, types::Error>> + Send + 'static
+    ) -> impl std::future::Future<Output = std::result::Result<i32, types::BauBotError>> + Send + 'static
     {
         async move {
             // Chck if chat ID exists
@@ -164,7 +165,7 @@ impl Server {
                 }
                 None => None,
             }
-            .ok_or(types::Error::Uncontactable)
+            .ok_or(types::BauBotError::Uncontactable)
         }
     }
 
@@ -174,12 +175,12 @@ impl Server {
         chat_id | (message_id as i128)
     }
 
-    /// Pipe between [Server] and [crate::BauBot]
+    /// Actual pipeline between [types::ServerSocket] and [crate::BauBot]
     fn response_handler(
         server: Arc<Self>,
         bot: Bot,
         chat_id: i64,
-        send_attempt: std::result::Result<i32, types::Error>,
+        send_attempt: std::result::Result<i32, types::BauBotError>,
         client_response_sender: types::BauResponseSender,
         timeout: u64,
     ) -> impl std::future::Future<Output = ()> + Send {
@@ -234,7 +235,7 @@ impl Server {
                         Ok(ok) => client_response_sender.send(ok),
 
                         // See documentation for timeout
-                        Err(_) => client_response_sender.send(Err(types::Error::Timeout)),
+                        Err(_) => client_response_sender.send(Err(types::BauBotError::Timeout)),
                     }
                 }
 
@@ -293,9 +294,8 @@ impl Server {
         }
     }
 
-    /// Create a [crate::UpdateHandler] for the [Bot]
-    pub(crate) fn callback_update() -> crate::UpdateHandler<Box<dyn std::error::Error + Send + Sync>>
-    {
+    /// Create a [UpdateHandler] for the [Bot]
+    pub(crate) fn callback_update() -> UpdateHandler<Box<dyn std::error::Error + Send + Sync>> {
         Update::filter_callback_query()
             .filter_map(|update: Update| {
                 let callback_query = if let UpdateKind::CallbackQuery(callback_query) = update.kind
