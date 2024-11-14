@@ -1,0 +1,20 @@
+[package]
+name = "baubot-server"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+description.workspace = true
+licence-file.workspace = true
+repository.workspace = true
+
+[dependencies]
+tokio = { version = "1.41.1", features = ["full"] }
+baubot-core =  { path = "../baubot-core"}
+serde_json = "1.0.132"
+serde = { version = "1.0.215", features = ["derive"] }
+log = "0.4.22"
+
+[dev-dependencies]
+dotenvy = "0.15.7"
+env_logger = "0.11.5"
+baubot-core =  { path = "../baubot-core", features = ["test-utils"]}
