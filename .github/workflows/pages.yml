@@ -20,7 +20,7 @@ jobs:
     - name: Clean docs folder
       run: cargo clean --doc
     - name: Build docs
-      run: cargo doc --no-deps
+      run: cargo doc --no-deps --workspace --exclude baubot-utils
     - name: Add redirect
       run: echo '<meta http-equiv="refresh" content="0;url=baubot_core/index.html">' > target/doc/index.html
     - name: Remove lock file
